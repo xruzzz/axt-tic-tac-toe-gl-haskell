@@ -13,7 +13,8 @@ type Coor3DRI = Coor3D (Ratio Int)
 type SCoor = Coor3D Int
 data Field y = F [y] deriving (Eq, Show)
 data State = O | X | Z deriving (Eq, Show)
-type Winer = State
+data Winer = OW | XW | GA | GM1 |GM2 |GM3 | END deriving (Eq, Show)
+data GameType = VS1 | VS2 deriving (Eq, Show)
 xₘᵢₙ = negate xₘₐₓ
 xₘₐₓ = 300∷Ratio Int
 yₘᵢₙ = negate yₘₐₓ
@@ -53,22 +54,26 @@ numToC '8' = (C3D 1 0 (0∷Int))
 numToC '9' = (C3D 2 0 (0∷Int))
 
 xsa ∷ (Int, Int) → State → Field String → Winer
-xsa (l,n) s (F ss) = if (all (≡ce s) (ss !! l))  then s else Z
--- ∨ (all (≡ce s) (map (!! x) ss)) ∨ diag1 ∨ diag2
-  where diag1 = (((ss!! 0) !! 0) ≡ ((ss!! 1) !! 1))∧(((ss!! 0) !! 0) ≡ ((ss!! 2) !! 2))
-        diag2 = (((ss!! 0) !! 2) ≡ ((ss!! 1) !! 1))∧(((ss!! 0) !! 2) ≡ ((ss!! 2) !! 0))
+xsa (l,n) s (F ss)
+  | s ≡ X ∧ (eqToL ∨ eqToC ∨ diag1 ∨ diag2) = XW
+  | s ≡ O ∧ (eqToL ∨ eqToC ∨ diag1 ∨ diag2) = OW
+  | otherwise = GA
+  where diag1 = eqChar∧(((ss!! 0) !! 0) ≡ ((ss!! 1) !! 1))∧(((ss!! 0) !! 0) ≡ ((ss!! 2) !! 2))
+        diag2 = eqChar∧(((ss!! 0) !! 2) ≡ ((ss!! 1) !! 1))∧(((ss!! 0) !! 2) ≡ ((ss!! 2) !! 0))
+        eqToL = all (≡ce s) (ss !! l)
+        eqToC = all (≡ce s) (map (!! n) ss)
+        eqChar = ((ss!! 1) !! 1) ≡ ce s
 
-changeWorld ∷ Field String → SCoor→ State →(Winer, Field String)
-changeWorld (F [s1, s2, s3]) (C3D x y z) s
+changeWorld ∷ Winer → Field String → SCoor→ State →GameType → (Winer, Field String)
+changeWorld GA (F [s1, s2, s3]) (C3D x y z) s t
   | y ≡ 0 = let cl = sChange s1
-            in (if s3 ≠ cl then (xsa (y,x) s (F [s1, s2, s3])) else Z, F [cl, s2, s3])
+            in (if s1 ≠ cl then (xsa (y,x) s (F [cl, s2, s3])) else GM1, F [cl, s2, s3])
   | y ≡ 1 = let cl = sChange s2
-            in (if s2 ≠ cl then (xsa (y,x) s (F [s1, s2, s3])) else Z, F [s1, cl, s3])
+            in (if s2 ≠ cl then (xsa (y,x) s (F [s1, cl, s3])) else GM2, F [s1, cl, s3])
   | y ≡ 2 = let cl = sChange s3
-            in (if s3 ≠ cl then (xsa (y,x) s (F [s1, s2, s3])) else Z, F [s1, s2, cl])
+            in (if s3 ≠ cl then (xsa (y,x) s (F [s1, s2, cl])) else GM3, F [s1, s2, cl])
   where sChange = changeLine x s
-
--- checkLine (F [s1, s2, s3]) (x,y) s = 
+changeWorld w (F [s1, s2, s3]) (C3D x y z) _ _ = (w,(F [s1, s2, s3]))
   
 changeLine ∷ Int → State → String → String
 changeLine n s ss = map (\(i,c) → if (n ≡ i ∧ (ss !! n) ≡ ' ') then (if s ≡ X then 'X' else 'O') else c) numSt
@@ -95,44 +100,49 @@ changeState c s f = do
 cher X = O
 cher O = X
 
-keyboardMouse∷IORef GLfloat → IORef (GLfloat, GLfloat) → IORef (Winer, Field String)→ IORef State→ KeyboardMouseCallback
-keyboardMouse a p gg ch key Down _ _ = do
-  (_,ffs1) ← get gg
+keyboardMouse∷IORef GLfloat → IORef (GLfloat, GLfloat) → IORef (Winer, Field String)→ IORef State→IORef GameType→ KeyboardMouseCallback
+keyboardMouse a p gg ch gtr key Down _ _ = do
+  (w,ffs1) ← get gg
   cx ← get ch
+  gt ← get gtr
   case key of           -- 
 --    (MouseButton LeftButton) → ff $~! (\x →changeWorld x (C3D 1 1 (0∷Int)) X)
     (Char ' ') → a $~! negate
     (Char '+') → a $~! (* 2)
     (Char '-') → a $~! (/ 2)
-    (Char '1') → gg $~! ccWw (0, 2) cx
-    (Char '2') → gg $~! ccWw (1, 2) cx
-    (Char '3') → gg $~! ccWw (2, 2) cx
-    (Char '4') → gg $~! ccWw (0, 1) cx
-    (Char '5') → gg $~! ccWw (1, 1) cx
-    (Char '6') → gg $~! ccWw (2, 1) cx
-    (Char '7') → gg $~! ccWw (0, 0) cx
-    (Char '8') → gg $~! ccWw (1, 0) cx
-    (Char '9') → gg $~! ccWw (2, 0) cx
+    (Char '1') → gg $~! ccWw w (0, 2) cx gt
+    (Char '2') → gg $~! ccWw w (1, 2) cx gt
+    (Char '3') → gg $~! ccWw w (2, 2) cx gt
+    (Char '4') → gg $~! ccWw w (0, 1) cx gt
+    (Char '5') → gg $~! ccWw w (1, 1) cx gt
+    (Char '6') → gg $~! ccWw w (2, 1) cx gt
+    (Char '7') → gg $~! ccWw w (0, 0) cx gt
+    (Char '8') → gg $~! ccWw w (1, 0) cx gt
+    (Char '9') → gg $~! ccWw w (2, 0) cx gt
     (SpecialKey KeyLeft ) → p $~! \(x,y) → (x-0.1,y)
     (SpecialKey KeyRight) → p $~! \(x,y) → (x+0.1,y)
     (SpecialKey KeyUp   ) → p $~! \(x,y) → (x,y+0.1)
 --    (SpecialKey KeyDown ) →  -- \(x,y) → (x,y-0.1)
-    (SpecialKey KeyF1   ) → gg $~! (\(_,_)→(Z, F ["   ", "   ", "   "]))
+    (SpecialKey KeyF1   ) → gg $~! (\(_,_)→(GA, F ["   ", "   ", "   "]))     -- новая игра 1 игрок
+    (SpecialKey KeyF2   ) → gg $~! (\(_,_)→(GA, F ["   ", "   ", "   "]))     -- новая игра 2 игрока
     _ → return ()
---  ff $~! (snd $ ccWw (2, 0) cx)
   (w,ffs2) ← get gg
   print w
   if ffs1 ≠ ffs2 then do
-      ch $~! \x → cher x
+      case gt of
+           VS1 → putStrLn "ход компьютера"
+           VS2 → ch $~! \x → cher x
+           _ → return ()
       print $ ffs2
       case w of
-           X → putStrLn " X win!"
-           O → putStrLn " O win!"
+           XW → putStrLn " X выиграли!"
+           OW → putStrLn " O выиграли!"
+           END → putStrLn " Ничья! Нажмите F1"
            _ → return ()
 --      checkLine ffs2
                  else return ()
-  where ccWw (x, y) c = \(w,f) → changeWorld f (C3D x y (0∷Int)) c
-keyboardMouse _ _ _ _ _ _ _ _ = return ()
+  where ccWw wl (x, y) c g = \(w,f) → changeWorld wl f (C3D x y (0∷Int)) c g
+keyboardMouse _ _ _ _ _ _ _ _ _ = return ()
 
 xsaTest ∷ IO ()
 xsaTest = do
@@ -141,11 +151,11 @@ xsaTest = do
   let t3 = xsa (0,0) X (F ["XXX", "OO ", "   "])
   let t4 = xsa (0,2) X (F ["XXX", "   ", "   "])
   print $ t1
-  print $ t1 ≡ Z
+  print $ t1 ≡ GA
   print $ t2
-  print $ t2 ≡ X
+  print $ t2 ≡ XW
   print $ t3
-  print $ t3 ≡ X
+  print $ t3 ≡ XW
 
 main∷IO ()
 main = do
@@ -161,9 +171,10 @@ main = do
     angle ← newIORef $ pi/2
     delta ← newIORef $ pi/360
     pos ← newIORef (0, 0)
-    game ← newIORef (Z, F ["   ", "   ", "   "])
+    game ← newIORef (GA, F ["   ", "   ", "   "])
     cheri ← newIORef X
-    keyboardMouseCallback $= Just (keyboardMouse delta pos game cheri)
+    gameType ← newIORef VS2
+    keyboardMouseCallback $= Just (keyboardMouse delta pos game cheri gameType)
     idleCallback $= Just (idle game)
     displayCallback $= display angle game
     matrixMode $= Projection
@@ -214,7 +225,6 @@ display ang gs = do
 --      rasterPos (Vertex2 0 0)
 --      renderString Roman "Xк☺-✔+×"
 --        scale 1.0 1.0 (1.0∷GLfloat)
-
           showState (F fi)
     swapBuffers
 {-
