@@ -8,12 +8,12 @@ import TLib
 import Graphics.UI.GLUT
 import GL.Types(V2FL, V3FL, Coor2(..), Coor3(..), Coor3D(..), fromDegrees)
 import Data.Ratio
-
+import Data.Typeable
 type Coor3DRI = Coor3D (Ratio Int)
 type SCoor = Coor3D Int
-data Field y = F [y] deriving Show
+data Field y = F [y] deriving (Eq, Show)
 data State = O | X | Z deriving (Eq, Show)
-
+type Winer = State
 xₘᵢₙ = negate xₘₐₓ
 xₘₐₓ = 300∷Ratio Int
 yₘᵢₙ = negate yₘₐₓ
@@ -42,24 +42,36 @@ cv 'X' = X
 cv 'O' = O
 cv ' ' = Z
 
-numToC '1' = (C3D 2 0 (0∷Int))
-numToC '2' = (C3D 2 1 (0∷Int))
+numToC '1' = (C3D 0 2 (0∷Int))
+numToC '2' = (C3D 1 2 (0∷Int))
 numToC '3' = (C3D 2 2 (0∷Int))
-numToC '4' = (C3D 1 0 (0∷Int))
+numToC '4' = (C3D 0 1 (0∷Int))
 numToC '5' = (C3D 1 1 (0∷Int))
-numToC '6' = (C3D 1 2 (0∷Int))
+numToC '6' = (C3D 2 1 (0∷Int))
 numToC '7' = (C3D 0 0 (0∷Int))
-numToC '8' = (C3D 0 1 (0∷Int))
-numToC '9' = (C3D 0 2 (0∷Int))
+numToC '8' = (C3D 1 0 (0∷Int))
+numToC '9' = (C3D 2 0 (0∷Int))
 
-changeWorld ∷ Field String → SCoor→ State → Field String
+xsa ∷ (Int, Int) → State → Field String → Winer
+xsa (l,n) s (F ss) = if (all (≡ce s) (ss !! l))  then s else Z
+-- ∨ (all (≡ce s) (map (!! x) ss)) ∨ diag1 ∨ diag2
+  where diag1 = (((ss!! 0) !! 0) ≡ ((ss!! 1) !! 1))∧(((ss!! 0) !! 0) ≡ ((ss!! 2) !! 2))
+        diag2 = (((ss!! 0) !! 2) ≡ ((ss!! 1) !! 1))∧(((ss!! 0) !! 2) ≡ ((ss!! 2) !! 0))
+
+changeWorld ∷ Field String → SCoor→ State →(Winer, Field String)
 changeWorld (F [s1, s2, s3]) (C3D x y z) s
-  | y == 0 = F [changeLine s1 x s, s2, s3]
-  | y == 1 = F [s1, changeLine s2 x s, s3]
-  | y == 2 = F [s1, s2, changeLine s3 x s]
+  | y ≡ 0 = let cl = sChange s1
+            in (if s3 ≠ cl then (xsa (y,x) s (F [s1, s2, s3])) else Z, F [cl, s2, s3])
+  | y ≡ 1 = let cl = sChange s2
+            in (if s2 ≠ cl then (xsa (y,x) s (F [s1, s2, s3])) else Z, F [s1, cl, s3])
+  | y ≡ 2 = let cl = sChange s3
+            in (if s3 ≠ cl then (xsa (y,x) s (F [s1, s2, s3])) else Z, F [s1, s2, cl])
+  where sChange = changeLine x s
 
-changeLine ∷ String → Int → State → String
-changeLine ss n s = map (\(x,y) → if n == x then (if s == X then 'X' else 'O') else y) numSt
+-- checkLine (F [s1, s2, s3]) (x,y) s = 
+  
+changeLine ∷ Int → State → String → String
+changeLine n s ss = map (\(i,c) → if (n ≡ i ∧ (ss !! n) ≡ ' ') then (if s ≡ X then 'X' else 'O') else c) numSt
   where numSt = zip [0..] ss
 
 class F a where
@@ -83,35 +95,60 @@ changeState c s f = do
 cher X = O
 cher O = X
 
-keyboardMouse∷IORef GLfloat → IORef (GLfloat, GLfloat) → IORef (Field String)→ IORef State→ KeyboardMouseCallback
-keyboardMouse a p ff ch key Down _ _ = do
+keyboardMouse∷IORef GLfloat → IORef (GLfloat, GLfloat) → IORef (Winer, Field String)→ IORef State→ KeyboardMouseCallback
+keyboardMouse a p gg ch key Down _ _ = do
+  (_,ffs1) ← get gg
   cx ← get ch
-  ch $~! \x → cher x
-  case key of
-    (MouseButton LeftButton) → ff $~! (\x →changeWorld x (C3D 1 1 (0∷Int)) X)
+  case key of           -- 
+--    (MouseButton LeftButton) → ff $~! (\x →changeWorld x (C3D 1 1 (0∷Int)) X)
     (Char ' ') → a $~! negate
     (Char '+') → a $~! (* 2)
     (Char '-') → a $~! (/ 2)
-    (Char '1') → ff $~! (\x →changeWorld x (C3D 0 2 (0∷Int)) cx)
-    (Char '2') → ff $~! (\x →changeWorld x (C3D 1 2 (0∷Int)) cx)
-    (Char '3') → ff $~! (\x →changeWorld x (C3D 2 2 (0∷Int)) cx)
-    (Char '4') → ff $~! (\x →changeWorld x (C3D 0 1 (0∷Int)) cx)
-    (Char '5') → ff $~! (\x →changeWorld x (C3D 1 1 (0∷Int)) cx)
-    (Char '6') → ff $~! (\x →changeWorld x (C3D 2 1 (0∷Int)) cx)
-    (Char '7') → ff $~! (\x →changeWorld x (C3D 0 0 (0∷Int)) cx)
-    (Char '8') → ff $~! (\x →changeWorld x (C3D 1 0 (0∷Int)) cx)
-    (Char '9') → ff $~! (\x →changeWorld x (C3D 2 0 (0∷Int)) cx)
+    (Char '1') → gg $~! ccWw (0, 2) cx
+    (Char '2') → gg $~! ccWw (1, 2) cx
+    (Char '3') → gg $~! ccWw (2, 2) cx
+    (Char '4') → gg $~! ccWw (0, 1) cx
+    (Char '5') → gg $~! ccWw (1, 1) cx
+    (Char '6') → gg $~! ccWw (2, 1) cx
+    (Char '7') → gg $~! ccWw (0, 0) cx
+    (Char '8') → gg $~! ccWw (1, 0) cx
+    (Char '9') → gg $~! ccWw (2, 0) cx
     (SpecialKey KeyLeft ) → p $~! \(x,y) → (x-0.1,y)
     (SpecialKey KeyRight) → p $~! \(x,y) → (x+0.1,y)
     (SpecialKey KeyUp   ) → p $~! \(x,y) → (x,y+0.1)
 --    (SpecialKey KeyDown ) →  -- \(x,y) → (x,y-0.1)
-    (SpecialKey KeyF1   ) → ff $~! (\x → F ["   ", "   ", "   "])
+    (SpecialKey KeyF1   ) → gg $~! (\(_,_)→(Z, F ["   ", "   ", "   "]))
     _ → return ()
+--  ff $~! (snd $ ccWw (2, 0) cx)
+  (w,ffs2) ← get gg
+  print w
+  if ffs1 ≠ ffs2 then do
+      ch $~! \x → cher x
+      print $ ffs2
+      case w of
+           X → putStrLn " X win!"
+           O → putStrLn " O win!"
+           _ → return ()
+--      checkLine ffs2
+                 else return ()
+  where ccWw (x, y) c = \(w,f) → changeWorld f (C3D x y (0∷Int)) c
 keyboardMouse _ _ _ _ _ _ _ _ = return ()
+
+xsaTest ∷ IO ()
+xsaTest = do
+  let t1 = xsa (0,0) X (F ["XOO", "   ", "   "])
+  let t2 = xsa (0,0) X (F ["XXX", "   ", "   "])
+  let t3 = xsa (0,0) X (F ["XXX", "OO ", "   "])
+  let t4 = xsa (0,2) X (F ["XXX", "   ", "   "])
+  print $ t1
+  print $ t1 ≡ Z
+  print $ t2
+  print $ t2 ≡ X
+  print $ t3
+  print $ t3 ≡ X
 
 main∷IO ()
 main = do
---    let fi = F ["   ", "   ", "   "]
     let width = 1280
     let height = 1024
     let orthoWidth = 40
@@ -120,14 +157,15 @@ main = do
     initialDisplayMode $= [WithDepthBuffer, DoubleBuffered]
     initialWindowSize $= Size width height
     createWindow "AXT GL - www.axi.su - xruzzzz@gmail.com"
+    xsaTest
     angle ← newIORef $ pi/2
     delta ← newIORef $ pi/360
     pos ← newIORef (0, 0)
-    field ← newIORef (F ["   ", "   ", "   "])
+    game ← newIORef (Z, F ["   ", "   ", "   "])
     cheri ← newIORef X
-    keyboardMouseCallback $= Just (keyboardMouse delta pos field cheri)
-    idleCallback $= Just (idle field)
-    displayCallback $= display angle field
+    keyboardMouseCallback $= Just (keyboardMouse delta pos game cheri)
+    idleCallback $= Just (idle game)
+    displayCallback $= display angle game
     matrixMode $= Projection
     loadIdentity
     ortho2D (-340) 340 (-330) 330 -- (-5) 20
@@ -135,8 +173,8 @@ main = do
 
     mainLoop
 
-idle∷IORef (Field String) → IdleCallback
-idle fs = do
+idle∷IORef (Winer, Field String) → IdleCallback
+idle reWF = do
 --  d <- get delta
 --  angle $~! (+ d)
 --  (F fi) ← get fs
@@ -160,15 +198,15 @@ showState (F fs) = do
            O → showR O (C3D j i (0∷Int))
            otherwise → return ()
 
-display ∷ IORef GLfloat → IORef (Field String) → DisplayCallback
-display ang fs = do
+display ∷ IORef GLfloat → IORef (Winer, Field String) → DisplayCallback
+display ang gs = do
     clear [ColorBuffer, DepthBuffer]
     a ← get ang
     preservingMatrix $ do
 --        scale 0.5 0.5 (0.5∷GLfloat)
         color $ Color3 (0.2∷GLfloat) 0.8 0.8
 --        rotate a $ Vector3 1 0 0
-        (F fi) ← get fs
+        (w, F fi) ← get gs
         renderPrimitive Lines $ do
           field3D               
 --      rotate a $ Vector3 0 0 1
