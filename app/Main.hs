@@ -4,19 +4,23 @@ module Main where
 import Control.Monad
 import Data.IORef
 import Prelude.Unicode
-import TLib
 import Graphics.UI.GLUT
-import GL.Types(V2FL, V3FL, Coor2(..), Coor3(..), Coor3D(..), fromDegrees)
-import Data.Ratio
+import Data.Ratio(Ratio, (%))
+
 import Data.Typeable
-type Coor3DRI = Coor3D (Ratio Int)
-type SCoor = Coor3D Int
-data Field y = F [y] deriving (Eq, Show)
-data State = O | X | Z deriving (Eq, Show)
-data Winer = OW | XW | GA | GM1 |GM2 |GM3 | END deriving (Eq, Show)
-data GameType = VS1 | VS2 deriving (Eq, Show)
+import System.Random(mkStdGen, randomR)
+-- import Data.Sequence (update, fromList)
+-- import qualified Data.ByteString.Char8 as BSC8 (ByteString, elemIndices, index, pack, unpack)
+import Data.List (elemIndices)
+import GL.Types(V2FL, V3FL, Coor2(..), Coor3(..), Coor3D(..), fromDegrees)
+import Game.Types
+import Game.Actions(changeLine)
+import Game.Conversions (c3D, cv, cher, re, toGLFloat)
+import Game.Rules (isEnd)
+import AI.Algorithms
+
 xₘᵢₙ = negate xₘₐₓ
-xₘₐₓ = 300∷Ratio Int
+xₘₐₓ = 300 ∷ RatI
 yₘᵢₙ = negate yₘₐₓ
 yₘₐₓ = xₘₐₓ
 
@@ -25,87 +29,84 @@ ny = nₓ
 
 stₓ = (xₘₐₓ - xₘᵢₙ) /nₓ
 sty = (yₘₐₓ - yₘᵢₙ) /ny
-offsetₓ = 50∷Ratio Int
-offsety = 80∷Ratio Int
+offsetₓ = 50∷RatI
+offsety = 80∷RatI
 
-toGLFloat ∷ Ratio Int → GLfloat
-toGLFloat x = fromRational (toRational x) ∷ GLfloat
-
-re X = "x"
-re O = "o"
-re Z = " "
-
-ce X = 'X'
-ce O = 'O'
-ce Z = ' '
-
-cv 'X' = X
-cv 'O' = O
-cv ' ' = Z
-
-numToC '1' = (C3D 0 2 (0∷Int))
-numToC '2' = (C3D 1 2 (0∷Int))
-numToC '3' = (C3D 2 2 (0∷Int))
-numToC '4' = (C3D 0 1 (0∷Int))
-numToC '5' = (C3D 1 1 (0∷Int))
-numToC '6' = (C3D 2 1 (0∷Int))
-numToC '7' = (C3D 0 0 (0∷Int))
-numToC '8' = (C3D 1 0 (0∷Int))
-numToC '9' = (C3D 2 0 (0∷Int))
-
-xsa ∷ (Int, Int) → State → Field String → Winer
-xsa (l,n) s (F ss)
-  | s ≡ X ∧ (eqToL ∨ eqToC ∨ diag1 ∨ diag2) = XW
-  | s ≡ O ∧ (eqToL ∨ eqToC ∨ diag1 ∨ diag2) = OW
-  | otherwise = GA
-  where diag1 = eqChar∧(((ss!! 0) !! 0) ≡ ((ss!! 1) !! 1))∧(((ss!! 0) !! 0) ≡ ((ss!! 2) !! 2))
-        diag2 = eqChar∧(((ss!! 0) !! 2) ≡ ((ss!! 1) !! 1))∧(((ss!! 0) !! 2) ≡ ((ss!! 2) !! 0))
-        eqToL = all (≡ce s) (ss !! l)
-        eqToC = all (≡ce s) (map (!! n) ss)
-        eqChar = ((ss!! 1) !! 1) ≡ ce s
-
-changeWorld ∷ Winer → Field String → SCoor→ State →GameType → (Winer, Field String)
+        
+changeWorld ∷ Winer → GameField → SCoor → State → GameType → (Winer, GameField)
 changeWorld GA (F [s1, s2, s3]) (C3D x y z) s t
-  | y ≡ 0 = let cl = sChange s1
-            in (if s1 ≠ cl then (xsa (y,x) s (F [cl, s2, s3])) else GM1, F [cl, s2, s3])
+  | y ≡ 0 = let
+                cl = sChange s1
+                (w1,f1) = (if s1 ≠ cl then (isEnd (y,x) s (F [cl, s2, s3])) else GM1, F [cl, s2, s3])
+            in (w1, getPCstep f1 0)
   | y ≡ 1 = let cl = sChange s2
-            in (if s2 ≠ cl then (xsa (y,x) s (F [s1, cl, s3])) else GM2, F [s1, cl, s3])
+            in (if s2 ≠ cl then (isEnd (y,x) s (F [s1, cl, s3])) else GM2, F [s1, cl, s3])
   | y ≡ 2 = let cl = sChange s3
-            in (if s3 ≠ cl then (xsa (y,x) s (F [s1, s2, cl])) else GM3, F [s1, s2, cl])
+            in (if s3 ≠ cl then (isEnd (y,x) s (F [s1, s2, cl])) else GM3, F [s1, s2, cl])
   where sChange = changeLine x s
 changeWorld w (F [s1, s2, s3]) (C3D x y z) _ _ = (w,(F [s1, s2, s3]))
-  
-changeLine ∷ Int → State → String → String
-changeLine n s ss = map (\(i,c) → if (n ≡ i ∧ (ss !! n) ≡ ' ') then (if s ≡ X then 'X' else 'O') else c) numSt
-  where numSt = zip [0..] ss
+
+getPCstep ∷ GameField → GameLevel → GameField
+getPCstep (F [s1, s2, s3]) l = do
+    case l of
+        0 → let
+                sg1 = mkStdGen 42
+                {-fp = map findFreePos [s1, s2, s3]
+                fp0 = fp !! 0
+                fp1 = fp !! 1
+                fp2 = fp !! 2
+                n = if (length fp0)>0 then (head $ map fst fp0) else
+                        if (length fp1)>0 then (head $ map fst fp1) else
+                            if (length fp2)>0 then (head $ map fst fp2) else 4
+                fch s fd = if (length fd) > 0 then (replaceNth n 'O' s) else s
+                -}
+                in (F [s1, s2, s3]) -- (F (map fch [s1, s2,s3]))
+        1 → undefined
+
+
+replaceNth n newVal (x:xs)
+     | n == 0 = newVal:xs
+     | otherwise = x:replaceNth (n-1) newVal xs
+
+-- | Функции поиска свободных позиций
+-- return [0,2],[],..
+
+
+{-
+getFreePos ∷ GameField → [SCoor]
+getFreePos (F [s1, s2, s3]) = let dd = map findFreePos [s1, s2, s3]
+                              in filter (\x -> length (snd x) > 0) . zip [0..] $ dd
+                              
+getFreePos2 ∷ [[Int]] → [SCoor]
+getFreePos2 d = getFreePosHelper d 0 []
+getFreePosHelper [] _ acc = acc
+getFreePosHelper (x:xs) n acc =  getFreePosHelper xs (n+1) (acc ++ (map (\din -> C3D {x=n, y=din , z=0}) xs))
+-}
+
+findFreePos ∷ GameField → [[Int]]
+findFreePos (F s) = map (elemIndices ' ') s
 
 class F a where
-    tron∷(a → b) → Bool
+    tron ∷ (a → b) → Bool
 
 instance F State where
     tron d = True
 
-func∷Int → Int
-func b = 5
-
 step = 100 -- для текста 0.6
 
-changeState∷Char → State → Field String → IO ()
+changeState ∷ Char → State → GameField → IO ()
 changeState  'q' _ _ = do putStrLn "The End"
 changeState c s f = do
-        line ← getChar
-        putStrLn $ show f
-        changeState line X (F ["   ", "   ", "   "])
+    line ← getChar
+    putStrLn $ show f
+    changeState line X initField
 
-cher X = O
-cher O = X
-
-keyboardMouse∷IORef GLfloat → IORef (GLfloat, GLfloat) → IORef (Winer, Field String)→ IORef State→IORef GameType→ KeyboardMouseCallback
+keyboardMouse ∷ IORef GLfloat → IORef (GLfloat, GLfloat) → IORef (Winer, GameField)→ IORef State→IORef GameType→ KeyboardMouseCallback
 keyboardMouse a p gg ch gtr key Down _ _ = do
   (w,ffs1) ← get gg
   cx ← get ch
   gt ← get gtr
-  case key of           -- 
+  case key of
 --    (MouseButton LeftButton) → ff $~! (\x →changeWorld x (C3D 1 1 (0∷Int)) X)
     (Char ' ') → a $~! negate
     (Char '+') → a $~! (* 2)
@@ -123,15 +124,15 @@ keyboardMouse a p gg ch gtr key Down _ _ = do
     (SpecialKey KeyRight) → p $~! \(x,y) → (x+0.1,y)
     (SpecialKey KeyUp   ) → p $~! \(x,y) → (x,y+0.1)
 --    (SpecialKey KeyDown ) →  -- \(x,y) → (x,y-0.1)
-    (SpecialKey KeyF1   ) → gg $~! (\(_,_)→(GA, F ["   ", "   ", "   "]))     -- новая игра 1 игрок
-    (SpecialKey KeyF2   ) → gg $~! (\(_,_)→(GA, F ["   ", "   ", "   "]))     -- новая игра 2 игрока
+    (SpecialKey KeyF1   ) → gg $~! (\(_,_) → (GA, initField))     -- новая игра 1 игрок
+    (SpecialKey KeyF2   ) → gg $~! (\(_,_) → (GA, initField))     -- новая игра 2 игрока
     _ → return ()
   (w,ffs2) ← get gg
   print w
   if ffs1 ≠ ffs2 then do
       case gt of
-           VS1 → putStrLn "ход компьютера"
-           VS2 → ch $~! \x → cher x
+           VS_PC → putStrLn "ход компьютера"
+           VS_USER → ch $~! \x → cher x
            _ → return ()
       print $ ffs2
       case w of
@@ -141,15 +142,15 @@ keyboardMouse a p gg ch gtr key Down _ _ = do
            _ → return ()
 --      checkLine ffs2
                  else return ()
-  where ccWw wl (x, y) c g = \(w,f) → changeWorld wl f (C3D x y (0∷Int)) c g
+    where ccWw wl (x, y) c g = \(w,f) → changeWorld wl f (c3D x y) c g
 keyboardMouse _ _ _ _ _ _ _ _ _ = return ()
 
-xsaTest ∷ IO ()
-xsaTest = do
-  let t1 = xsa (0,0) X (F ["XOO", "   ", "   "])
-  let t2 = xsa (0,0) X (F ["XXX", "   ", "   "])
-  let t3 = xsa (0,0) X (F ["XXX", "OO ", "   "])
-  let t4 = xsa (0,2) X (F ["XXX", "   ", "   "])
+isEndTest ∷ IO ()
+isEndTest = do
+  let t1 = isEnd (0,0) X $ F ["XOO", "   ", "   "]
+  let t2 = isEnd (0,0) X $ F ["XXX", "   ", "   "]
+  let t3 = isEnd (0,0) X $ F ["XXX", "OO ", "   "]
+  let t4 = isEnd (0,2) X $ F ["XXX", "   ", "   "]
   print $ t1
   print $ t1 ≡ GA
   print $ t2
@@ -157,7 +158,7 @@ xsaTest = do
   print $ t3
   print $ t3 ≡ XW
 
-main∷IO ()
+main ∷ IO ()
 main = do
     let width = 1280
     let height = 1024
@@ -167,24 +168,25 @@ main = do
     initialDisplayMode $= [WithDepthBuffer, DoubleBuffered]
     initialWindowSize $= Size width height
     createWindow "AXT GL - www.axi.su - xruzzzz@gmail.com"
-    xsaTest
+    isEndTest
     angle ← newIORef $ pi/2
     delta ← newIORef $ pi/360
     pos ← newIORef (0, 0)
-    game ← newIORef (GA, F ["   ", "   ", "   "])
+    game ← newIORef (GA, initField)
     cheri ← newIORef X
-    gameType ← newIORef VS2
+    gameType ← newIORef VS_USER
     keyboardMouseCallback $= Just (keyboardMouse delta pos game cheri gameType)
     idleCallback $= Just (idle game)
     displayCallback $= display angle game
     matrixMode $= Projection
+    
     loadIdentity
     ortho2D (-340) 340 (-330) 330 -- (-5) 20
     matrixMode $= Modelview 0
 
     mainLoop
 
-idle∷IORef (Winer, Field String) → IdleCallback
+idle ∷ IORef (Winer, GameField) → IdleCallback
 idle reWF = do
 --  d <- get delta
 --  angle $~! (+ d)
@@ -192,30 +194,28 @@ idle reWF = do
 --  ds 
   postRedisplay Nothing
 
-nums = zip [0..] . map (zip [0..])
-
-showState ∷ Field String → IO ()
+showState ∷ GameField → IO ()
 showState (F fs) = do
-  let dd = nums fs
+  let
+    dd = zip [0..] $ map (zip [0..]) fs
   forM_ dd $ \(i,ss) → do
 --    putStrLn $ show i
---    raw X (C3D 0 0 (0∷Ratio Int))
+--    raw X (C3D 0 0 (0∷RatI))
 --    line3D (C3D (stₓ/2) (-50) 0) (C3D 40 (stₓ/2) 0)
- 
     forM_ ss $ \(j,ts) → do
-      let sd = (cv ts)
+      let sd = cv ts
       case sd of
-           X → showR X (C3D j i (0∷Int))
-           O → showR O (C3D j i (0∷Int))
+           X → showR X $ c3D j i
+           O → showR O $ c3D j i
            otherwise → return ()
 
-display ∷ IORef GLfloat → IORef (Winer, Field String) → DisplayCallback
+display ∷ IORef GLfloat → IORef (Winer, GameField) → DisplayCallback
 display ang gs = do
     clear [ColorBuffer, DepthBuffer]
     a ← get ang
     preservingMatrix $ do
 --        scale 0.5 0.5 (0.5∷GLfloat)
-        color $ Color3 (0.2∷GLfloat) 0.8 0.8
+        color $ Color3 (0.2 ∷ GLfloat) 0.8 0.8
 --        rotate a $ Vector3 1 0 0
         (w, F fi) ← get gs
         renderPrimitive Lines $ do
@@ -232,30 +232,31 @@ showA∷Field String → IO ()
 showA (F fi) = forM_ [0..2] $ \x → do
        forM_ [0..2] fi
        -}
-field3D∷IO ()
+field3D ∷ IO ()
 field3D = forM_ [negate stₓ/2,stₓ/2] $ \x → do
        line3D (C3D x yₘᵢₙ 0) (C3D x yₘₐₓ 0)
        line3D (C3D xₘᵢₙ x 0) (C3D xₘₐₓ x 0)
 
-xToRawX,yToRawY∷Ratio Int → GLfloat
+xToRawX, yToRawY ∷ RatI → GLfloat
 xToRawX x = toGLFloat $ xₘᵢₙ + x
 
 yToRawY y = toGLFloat $ yₘₐₓ - y
 
-showS∷State → SCoor → IO ()
+showS ∷ State → SCoor → IO ()
 showS s (C3D x y z) = rawT s (C3D (xₘᵢₙ + (150 * x % 1)) (yₘₐₓ - (150 * y % 1)) 0)
 
-showR∷State → SCoor → IO ()
+showR ∷ State → SCoor → IO ()
 showR s (C3D x y z) = raw s (C3D (xₘᵢₙ + (stₓ* (x % 1))) (yₘₐₓ - (sty * (y % 1))) 0)
 
-raw∷State → Coor3DRI→IO ()
+-- | Нарисовать знак
+raw ∷ State → Coor3DRI → IO ()
 raw s (C3D x y z) =
       case s of
             X → do
-              line3D (C3D (x₁) y₁ z) (C3D x₂ y₂ z)
+              line3D (C3D x₁ y₁ z) (C3D x₂ y₂ z)
               line3D (C3D x₁ y₂ z) (C3D x₂ y₁ z)
-              line3D (C3D x₂ y₁ z) (C3D x₂ y₂ z)
-              line3D (C3D x₁ y₁ z) (C3D x₁ y₂ z)
+--              line3D (C3D x₂ y₁ z) (C3D x₂ y₂ z)
+--              line3D (C3D x₁ y₁ z) (C3D x₁ y₂ z)
             O → do
               line3D (C3D x₁ y₁ z) (C3D x₂ y₁ z)
               line3D (C3D x₁ y₁ z) (C3D x₁ y₂ z)
@@ -269,14 +270,14 @@ raw s (C3D x y z) =
 
 rawT ∷ State → Coor3DRI → IO ()
 rawT s (C3D x y z) =
-        do
-              translate $ Vector3 (toGLFloat x₁) (toGLFloat y₁) 0
-              renderString Roman $ re s
-      where
+    do
+        translate $ Vector3 (toGLFloat x₁) (toGLFloat y₁) 0
+        renderString Roman $ re s
+    where
         x₁ = x + offsetₓ
         y₁ = y - offsety
 
-line3D∷Coor3DRI → Coor3DRI → IO ()
+line3D ∷ Coor3DRI → Coor3DRI → IO ()
 line3D beg end = do
         vertex (Vertex3 (toGLFloat (x beg)) (toGLFloat (y beg)) (toGLFloat (z beg)))
         vertex (Vertex3 (toGLFloat (x end)) (toGLFloat (y end)) (toGLFloat (z end)))
