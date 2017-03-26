@@ -2,16 +2,19 @@
 module Game.Types
     (
         Coor3DRI(..),
+        CoorOnField,
         Field(..),
         GameLevel(..),
         GameField(..),
         GameType(..),
+        RangeCoor(..),
         RatI,
         SCoor(..),
         State(..),
         Winer(..),
         initField,
-        nums
+        nums,
+        toCoorOnField
     )
     where
 
@@ -19,12 +22,30 @@ import GL.Types(V2FL, V3FL, Coor2(..), Coor3(..), Coor3D(..), fromDegrees)
 import Data.Ratio(Ratio)
 -- import qualified Data.ByteString.Char8 as BSC8
 
+type CoorOnField = (RangeCoor, RangeCoor)
+
+toCoorOnField ∷ Int → Int → CoorOnField
+toCoorOnField x y = (RangeCoor x, RangeCoor y)
 
 data Field y = F [y] deriving (Eq, Show)
 data State = O | X | Z deriving (Eq, Show)
 data GameType = VS_USER | VS_PC deriving (Eq, Show)
 data Winer = OW | XW | GA | GM1 |GM2 |GM3 | END deriving (Eq, Show)
 
+newtype KeyCoor = KeyCoor {getCC ∷ Char}
+
+instance Bounded KeyCoor where
+    minBound = KeyCoor '1'
+    maxBound = KeyCoor '9'
+
+newtype RangeCoor = RangeCoor {getRC ∷ Int}
+    deriving (Eq, Show)
+
+instance Bounded RangeCoor where
+    minBound = RangeCoor 0
+    maxBound = RangeCoor 2
+
+    
 type Coor3DRI = Coor3D (Ratio Int)
 type SCoor = Coor3D Int
 type GameLevel = Int

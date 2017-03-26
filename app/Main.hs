@@ -8,16 +8,22 @@ import Graphics.UI.GLUT
 import Data.Ratio(Ratio, (%))
 
 import Data.Typeable
+import qualified System.Console.ANSI as SCA (Color(..), ColorIntensity(..), ConsoleIntensity(..), ConsoleLayer(..), SGR (..), setSGR)
 import System.Random(mkStdGen, randomR)
 -- import Data.Sequence (update, fromList)
 -- import qualified Data.ByteString.Char8 as BSC8 (ByteString, elemIndices, index, pack, unpack)
-import Data.List (elemIndices)
 import GL.Types(V2FL, V3FL, Coor2(..), Coor3(..), Coor3D(..), fromDegrees)
-import Game.Types
+import Game.Types as GT (Coor3DRI(..), CoorOnField, GameField, GameType(..), Field(F), GameLevel(..), RangeCoor(..), RatI, SCoor(..), State(..), Winer(..),
+    initField, toCoorOnField)
 import Game.Actions(changeLine)
 import Game.Conversions (c3D, cv, cher, re, toGLFloat)
 import Game.Rules (isEnd)
 import AI.Algorithms
+import Field.Algorithms as FA(findFreePos, getFreePos)
+type StateAngle = IORef GLfloat
+type StatePosition = IORef (GLfloat, GLfloat)
+type StateGame = IORef (Winer, GameField)
+type StateGameType = IORef GameType
 
 xₘᵢₙ = negate xₘₐₓ
 xₘₐₓ = 300 ∷ RatI
@@ -33,18 +39,20 @@ offsetₓ = 50∷RatI
 offsety = 80∷RatI
 
         
-changeWorld ∷ Winer → GameField → SCoor → State → GameType → (Winer, GameField)
-changeWorld GA (F [s1, s2, s3]) (C3D x y z) s t
+changeWorld ∷ Winer → GameField → CoorOnField → State → GameType → (Winer, GameField)
+changeWorld GA (F [s1, s2, s3]) rxy@(RangeCoor x, RangeCoor y) s t
   | y ≡ 0 = let
                 cl = sChange s1
-                (w1,f1) = (if s1 ≠ cl then (isEnd (y,x) s (F [cl, s2, s3])) else GM1, F [cl, s2, s3])
+                (w1,f1) = (if s1 ≠ cl then (isEnd ryx s (F [cl, s2, s3])) else GM1, F [cl, s2, s3])
             in (w1, getPCstep f1 0)
   | y ≡ 1 = let cl = sChange s2
-            in (if s2 ≠ cl then (isEnd (y,x) s (F [s1, cl, s3])) else GM2, F [s1, cl, s3])
+            in (if s2 ≠ cl then (isEnd ryx s (F [s1, cl, s3])) else GM2, F [s1, cl, s3])
   | y ≡ 2 = let cl = sChange s3
-            in (if s3 ≠ cl then (isEnd (y,x) s (F [s1, s2, cl])) else GM3, F [s1, s2, cl])
-  where sChange = changeLine x s
-changeWorld w (F [s1, s2, s3]) (C3D x y z) _ _ = (w,(F [s1, s2, s3]))
+            in (if s3 ≠ cl then (isEnd ryx s (F [s1, s2, cl])) else GM3, F [s1, s2, cl])
+  where
+      sChange = changeLine x s
+      ryx = (RangeCoor y,RangeCoor x)
+changeWorld w (F [s1, s2, s3]) _ _ _ = (w,(F [s1, s2, s3]))
 
 getPCstep ∷ GameField → GameLevel → GameField
 getPCstep (F [s1, s2, s3]) l = do
@@ -63,28 +71,12 @@ getPCstep (F [s1, s2, s3]) l = do
                 in (F [s1, s2, s3]) -- (F (map fch [s1, s2,s3]))
         1 → undefined
 
-
 replaceNth n newVal (x:xs)
-     | n == 0 = newVal:xs
+     | n ≡ 0 = newVal:xs
      | otherwise = x:replaceNth (n-1) newVal xs
 
 -- | Функции поиска свободных позиций
 -- return [0,2],[],..
-
-
-{-
-getFreePos ∷ GameField → [SCoor]
-getFreePos (F [s1, s2, s3]) = let dd = map findFreePos [s1, s2, s3]
-                              in filter (\x -> length (snd x) > 0) . zip [0..] $ dd
-                              
-getFreePos2 ∷ [[Int]] → [SCoor]
-getFreePos2 d = getFreePosHelper d 0 []
-getFreePosHelper [] _ acc = acc
-getFreePosHelper (x:xs) n acc =  getFreePosHelper xs (n+1) (acc ++ (map (\din -> C3D {x=n, y=din , z=0}) xs))
--}
-
-findFreePos ∷ GameField → [[Int]]
-findFreePos (F s) = map (elemIndices ' ') s
 
 class F a where
     tron ∷ (a → b) → Bool
@@ -101,74 +93,67 @@ changeState c s f = do
     putStrLn $ show f
     changeState line X initField
 
-keyboardMouse ∷ IORef GLfloat → IORef (GLfloat, GLfloat) → IORef (Winer, GameField)→ IORef State→IORef GameType→ KeyboardMouseCallback
+keyboardMouse ∷ StateAngle → StatePosition → StateGame → IORef State → StateGameType → KeyboardMouseCallback
 keyboardMouse a p gg ch gtr key Down _ _ = do
-  (w,ffs1) ← get gg
-  cx ← get ch
-  gt ← get gtr
-  case key of
---    (MouseButton LeftButton) → ff $~! (\x →changeWorld x (C3D 1 1 (0∷Int)) X)
-    (Char ' ') → a $~! negate
-    (Char '+') → a $~! (* 2)
-    (Char '-') → a $~! (/ 2)
-    (Char '1') → gg $~! ccWw w (0, 2) cx gt
-    (Char '2') → gg $~! ccWw w (1, 2) cx gt
-    (Char '3') → gg $~! ccWw w (2, 2) cx gt
-    (Char '4') → gg $~! ccWw w (0, 1) cx gt
-    (Char '5') → gg $~! ccWw w (1, 1) cx gt
-    (Char '6') → gg $~! ccWw w (2, 1) cx gt
-    (Char '7') → gg $~! ccWw w (0, 0) cx gt
-    (Char '8') → gg $~! ccWw w (1, 0) cx gt
-    (Char '9') → gg $~! ccWw w (2, 0) cx gt
-    (SpecialKey KeyLeft ) → p $~! \(x,y) → (x-0.1,y)
-    (SpecialKey KeyRight) → p $~! \(x,y) → (x+0.1,y)
-    (SpecialKey KeyUp   ) → p $~! \(x,y) → (x,y+0.1)
---    (SpecialKey KeyDown ) →  -- \(x,y) → (x,y-0.1)
-    (SpecialKey KeyF1   ) → gg $~! (\(_,_) → (GA, initField))     -- новая игра 1 игрок
-    (SpecialKey KeyF2   ) → gg $~! (\(_,_) → (GA, initField))     -- новая игра 2 игрока
-    _ → return ()
-  (w,ffs2) ← get gg
-  print w
-  if ffs1 ≠ ffs2 then do
-      case gt of
-           VS_PC → putStrLn "ход компьютера"
-           VS_USER → ch $~! \x → cher x
-           _ → return ()
-      print $ ffs2
-      case w of
-           XW → putStrLn " X выиграли!"
-           OW → putStrLn " O выиграли!"
-           END → putStrLn " Ничья! Нажмите F1"
-           _ → return ()
---      checkLine ffs2
-                 else return ()
-    where ccWw wl (x, y) c g = \(w,f) → changeWorld wl f (c3D x y) c g
+    (w,ffs1) ← get gg
+    cx ← get ch
+    gt ← get gtr
+    case key of
+    --    (MouseButton LeftButton) → ff $~! (\x →changeWorld x (C3D 1 1 (0∷Int)) X)
+        (Char ' ') → a $~! negate
+        (Char '+') → a $~! (* 2)
+        (Char '-') → a $~! (/ 2)
+        (Char '1') → gg $~! ccWw w (toCoorOnField 0 2) cx gt
+        (Char '2') → gg $~! ccWw w (toCoorOnField 1 2) cx gt
+        (Char '3') → gg $~! ccWw w (toCoorOnField 2 2) cx gt
+        (Char '4') → gg $~! ccWw w (toCoorOnField 0 1) cx gt
+        (Char '5') → gg $~! ccWw w (toCoorOnField 1 1) cx gt
+        (Char '6') → gg $~! ccWw w (toCoorOnField 2 1) cx gt
+        (Char '7') → gg $~! ccWw w (toCoorOnField 0 0) cx gt
+        (Char '8') → gg $~! ccWw w (toCoorOnField 1 0) cx gt
+        (Char '9') → gg $~! ccWw w (toCoorOnField 2 0) cx gt
+        (SpecialKey KeyLeft ) → p $~! \(x,y) → (x-0.1,y)
+        (SpecialKey KeyRight) → p $~! \(x,y) → (x+0.1,y)
+        (SpecialKey KeyUp   ) → p $~! \(x,y) → (x,y+0.1)
+    --    (SpecialKey KeyDown ) →  -- \(x,y) → (x,y-0.1)
+        (SpecialKey KeyF1   ) → gg $~! (\(_,_) → (GA, initField))     -- новая игра 1 игрок
+        (SpecialKey KeyF2   ) → gg $~! (\(_,_) → (GA, initField))     -- новая игра 2 игрока
+        _ → return ()
+    (w,ffs2) ← get gg
+    print w
+    if ffs1 ≠ ffs2 then do
+        case gt of
+            VS_PC → do
+                SCA.setSGR [ SCA.SetConsoleIntensity SCA.BoldIntensity, SCA.SetColor SCA.Foreground SCA.Vivid SCA.Red]
+                putStrLn "Ход компьютера"
+                SCA.setSGR [SCA.Reset]
+            VS_USER → ch $~! \x → cher x
+            _ → return ()
+        print $ ffs2
+        let f1 = " Нажмите F1"
+        case w of
+            XW → putStrLn $ " X выиграли!" ++ f1
+            OW → putStrLn $ " O выиграли!" ++ f1
+            END → putStrLn $ " Ничья!" ++ f1
+            _ → return ()
+    --      checkLine ffs2
+    else return ()
+  where
+      ccWw wl cr c g = \(w,f) → changeWorld wl f cr c g
 keyboardMouse _ _ _ _ _ _ _ _ _ = return ()
 
-isEndTest ∷ IO ()
-isEndTest = do
-  let t1 = isEnd (0,0) X $ F ["XOO", "   ", "   "]
-  let t2 = isEnd (0,0) X $ F ["XXX", "   ", "   "]
-  let t3 = isEnd (0,0) X $ F ["XXX", "OO ", "   "]
-  let t4 = isEnd (0,2) X $ F ["XXX", "   ", "   "]
-  print $ t1
-  print $ t1 ≡ GA
-  print $ t2
-  print $ t2 ≡ XW
-  print $ t3
-  print $ t3 ≡ XW
+
 
 main ∷ IO ()
 main = do
-    let width = 1280
-    let height = 1024
+    let width = 1024
+    let height = 768
     let orthoWidth = 40
     let orthoHeight = 30
     (_progName, _args) ← getArgsAndInitialize
     initialDisplayMode $= [WithDepthBuffer, DoubleBuffered]
     initialWindowSize $= Size width height
-    createWindow "AXT GL - www.axi.su - xruzzzz@gmail.com"
-    isEndTest
+    createWindow "AXT GL Tic tac toe"
     angle ← newIORef $ pi/2
     delta ← newIORef $ pi/360
     pos ← newIORef (0, 0)

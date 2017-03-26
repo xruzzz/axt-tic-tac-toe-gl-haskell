@@ -7,10 +7,10 @@ module Game.Rules
     where
 import Prelude.Unicode
 import Game.Conversions
-import Game.Types(GameField, State(..), Winer(..),Field(F))
+import Game.Types(CoorOnField, GameField, State(..), Winer(..), Field(F), RangeCoor(..))
 -- | Проверить выиграл ли кто
-isEnd ∷ (Int, Int) → State → GameField → Winer
-isEnd (l,n) s (F ss)
+isEnd ∷ CoorOnField → State → GameField → Winer
+isEnd (RangeCoor l,RangeCoor n) s (F ss)
   | s ≡ X ∧ (eqToL ∨ eqToC ∨ diag1 ∨ diag2) = XW
   | s ≡ O ∧ (eqToL ∨ eqToC ∨ diag1 ∨ diag2) = OW
   | otherwise = GA
