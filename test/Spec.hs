@@ -1,37 +1,33 @@
 {-# LANGUAGE UnicodeSyntax #-}
 import Test.QuickCheck
 
-import           Test.Hspec (hspec)
-import Test.HUnit
 -- import Test.Framework
 -- import Test.Framework.Providers.HUnit
-import Data.Monoid
 import Control.Monad
-import Game.Rules (isEnd)
-import Game.Types as GT (CoorOnField, Field(F), State(..), Winer(..),
-    toCoorOnField)
+import Data.Monoid
+import AXT.TicTacToe.Field as FA(findFreePos, getFreePos)
+import AXT.TicTacToe.Rules (isEnd)
+import AXT.TicTacToe.Types as GT (CoorOnField, Field(F), State(..), StepResult(..), toCoorOnField)
 import Prelude.Unicode
-import Field.Algorithms as FA(findFreePos, getFreePos)
+import TestData as TD (fields)
+import Test.HUnit
+import Test.Hspec (hspec)
+import qualified Tests.TicTacToe.Actions as SGA (spec)
 -- import Utils
 -- prop_reverseReverse :: [Int] -> Bool
 -- prop_reverseReverse xs = reverse (reverse xs) == xs
-fields = fmap F [
-            ["XOO", "   ", "   "],
-            ["XXX", "   ", "   "],
-            ["XXX", "OO ", "   "],
-            ["XXX", "   ", "   "]]
-            
--- isEndTest ∷ [
-isEndTest = let
-        t1 = isEnd (toCoorOnField 0 0) X $ fields !! 0
-        t2 = isEnd (toCoorOnField 0 0) X $ fields !! 1
-        t3 = isEnd (toCoorOnField 0 0) X $ fields !! 2
-        t4 = isEnd (toCoorOnField 0 2) X $ fields !! 3
-            in [TestCase $ assertEqual " isEnd Test 1 " True (t1 ≡ GA),TestCase $ assertEqual " isEnd Test 2 " True (t2 ≡ XW), TestCase $ assertEqual " isEnd Test 2 " True (t3 ≡ XW)]
+import Helpers (mapTests)
+
+isEndTest = mapTests " isEnd " $ [  (XWIN       , isEnd (toCoorOnField 2 0) O $ F ["XO ", "XO ", "   "]),
+                                    (GA         , isEnd (toCoorOnField 1 2) O $ F ["XOX", "   ", "   "]),
+                                    (WARNING1   , isEnd (toCoorOnField 0 2) O $ F ["XOX", "   ", "   "]),
+                                    (ERROR1     , isEnd (toCoorOnField 0 0) X $ F ["XOO", "   ", "   "]),
+                                    (ERROR1     , isEnd (toCoorOnField 0 0) X $ F ["XXX", "   ", "   "]),
+                                    (ERROR1     , isEnd (toCoorOnField 0 2) X $ F ["XXX", "   ", "   "])]
 
 testGetFreePos = let
-                     gf1 = getFreePos (fields !! 0)
+                     gf1 = getFreePos (head fields)
                      rlgf1 = [toCoorOnField 1 0, toCoorOnField 1 1, toCoorOnField 1 2, toCoorOnField 2 0, toCoorOnField 2 1, toCoorOnField 2 2]
                  in [TestCase $ assertEqual " Test 1 getFreePos" rlgf1 gf1]
 main :: IO Counts
-main = runTestTT . TestList $ isEndTest ++ testGetFreePos
+main = runTestTT . TestList $ isEndTest ++ testGetFreePos ++ SGA.spec
