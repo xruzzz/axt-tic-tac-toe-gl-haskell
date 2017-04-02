@@ -5,6 +5,7 @@ module AXT.TicTacToe.Rules
         isEnd
     )
     where
+
 import Prelude.Unicode
 import AXT.TicTacToe.Conversions
 import AXT.TicTacToe.Types(CoorOnField, GameField, State(..), StepResult(..), Field(F), RangeCoor(..))

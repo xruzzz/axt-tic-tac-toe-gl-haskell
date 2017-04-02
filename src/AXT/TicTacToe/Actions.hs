@@ -1,7 +1,7 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module AXT.TicTacToe.Actions
     (
-        changeWorld
+        step
     )
     where
 
@@ -13,22 +13,21 @@ import AXT.TicTacToe.Types as GT (CoorOnField, GameField, GameType(..), Field(F)
 import Prelude.Unicode
 
 -- | Изменить строку
-changeLine ∷ Int → State → StepResult → String → (StepResult, String)
-changeLine n s sr ss = let
-                        isFree = (ss !! n) ≡ ' '
-                    in if isFree then
-                            (sr, map (\(i,c) → if (n ≡ i ∧ isFree) then (if s ≡ X then 'X' else 'O') else c) $ zip [0..] ss)
+changeLine ∷ Int → State → String → String
+changeLine n s ss = let isFree = (ss !! n) ≡ ' '
+                    in
+                        if isFree then
+                            map (\(i,c) → if (n ≡ i ∧ isFree) then (if s ≡ X then 'X' else 'O') else c) $ zip [0..] ss
                         else
-                            (WARNING1, ss)
+                            ss
 
-changeWorld ∷ StepResult → GameField → CoorOnField → State → GameType → (StepResult, GameField)
-changeWorld GA (F [l0, l1, l2]) rls@(RangeCoor l, RangeCoor sy) s t
-  | l ≡ 0 = let (stR, cl) = sChange l0
+step ∷ State → GameField → CoorOnField →  GameType → (StepResult, GameField)
+step s (F [l0, l1, l2]) rls@(RangeCoor l, RangeCoor sy) t
+  | l ≡ 0 = let cl= sChange l0
             in (if l0 ≠ cl then (isEnd rls s (F [cl, l1, l2])) else GM1, F [cl, l1, l2])
-  | l ≡ 1 = let (stR, cl) = sChange l1
+  | l ≡ 1 = let cl = sChange l1
             in (if l1 ≠ cl then (isEnd rls s (F [l0, cl, l2])) else GM2, F [l0, cl, l2])
-  | l ≡ 2 = let (stR, cl) = sChange l2
+  | l ≡ 2 = let cl = sChange l2
             in (if l2 ≠ cl then (isEnd rls s (F [l0, l1, cl])) else GM3, F [l0, l1, cl])
   where
-      sChange = changeLine sy s GA
-changeWorld w (F [l0, l1, l2]) _ _ _ = (w, (F [l0, l1, l2]))
+      sChange = changeLine sy s

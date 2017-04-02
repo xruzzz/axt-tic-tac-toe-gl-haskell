@@ -13,6 +13,7 @@ import AXT.TicTacToe.Types as AT (Coor3DRI(..), CoorOnField, GameField, GameType
 getFreePos ∷ GameField → [CoorOnField]
 getFreePos (F ss) = concatMap (\(x, ss) -> strToIndices x ss) $zip [0..] ss
 
+
 strToIndices y = map (\x -> (RangeCoor y, RangeCoor x)) . elemIndices ' '
 {-
     let dd = map findFreePos [s1, s2, s3]

@@ -46,12 +46,22 @@ instance Bounded RangeCoor where
     maxBound = RangeCoor 2
 
 newtype GameLevel = GameLevel {getLvl ∷Int}
-    deriving (Eq, Show)
+    deriving (Eq, Ord, Show)
+
+instance Enum GameLevel where
+    toEnum x
+            | x < getLvl minB = minB
+            | x > getLvl maxB = maxB
+            | otherwise = GameLevel x
+        where 
+            minB = minBound::GameLevel
+            maxB = maxBound::GameLevel
+    fromEnum ( GameLevel x )= x
 
 instance Bounded GameLevel where
     minBound = GameLevel 0
-    maxBound = GameLevel 2
-    
+    maxBound = GameLevel 4
+
 type Coor3DRI = Coor3D (Ratio Int)
 type SCoor = Coor3D Int
 
